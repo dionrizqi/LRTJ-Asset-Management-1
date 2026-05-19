@@ -441,7 +441,7 @@ class AcquisitionController extends Controller
             if (!$policy->depr_start_date || Carbon::parse($deprStartDate)->lt(Carbon::parse($policy->depr_start_date))) {
                 $updates['depr_start_date'] = $deprStartDate->toDateString();
             }
-            if ((int)($policy->useful_life_months ?? 0) <= 0) {
+            if ($lifeMonths > 0 && (int)($policy->useful_life_months ?? 0) !== $lifeMonths) {
                 $updates['useful_life_months'] = $lifeMonths;
             }
             if (!empty($updates)) {
