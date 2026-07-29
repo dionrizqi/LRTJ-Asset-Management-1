@@ -477,7 +477,19 @@ class AcquisitionController extends Controller
 
         $from = $candidates->sortBy(fn($d) => $d->timestamp)->first();
 
-        $to = now()->startOfMonth();
+        $lastProcessedPeriod = DB::table('assets_depr_month_closings')
+            ->whereNotNull('processed_at')
+            ->max('period');
+
+        if (!$lastProcessedPeriod) {
+            return;
+        }
+
+        $to = Carbon::parse($lastProcessedPeriod)->startOfMonth();
+
+        if ($to->lt($from)) {
+            return;
+        }
 
         AssetDeprMonthly::where('asset_uuid', $assetUuid)
             ->whereDate('period', '>=', $from->toDateString())

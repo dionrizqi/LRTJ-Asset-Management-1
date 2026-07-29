@@ -15,6 +15,11 @@
         const CURR_END = CFG.CURRENT_MONTH_END; // YYYY-MM-DD
         const CURR_TEXT = CFG.CURRENT_MONTH_TEXT; // "January 2026"
 
+        const ADJ_START = CFG.ADJ_DATE_START || CURR_START;
+        const ADJ_END = CFG.ADJ_DATE_END || CURR_END;
+        const ADJ_DEFAULT = CFG.ADJ_DATE_DEFAULT || NOW_DATE || ADJ_START;
+        const ADJ_TEXT = CFG.ADJ_DATE_TEXT || CURR_TEXT;
+
         const $formProc = $('#form-process-month');
 
         const $btnProcOpen = $('#btn-open-process-month');
@@ -153,22 +158,26 @@
         }
 
         // ===== Adjustment Depreciation modal open =====
+        // ===== Adjustment Depreciation modal open =====
         $btnAdjOpen.on('click', () => {
             $('#form-adj-depr')[0].reset();
             $('#adj-asset-uuid').val('');
             $('#adj-asset').val(null).trigger('change');
 
-            // batasi tanggal hanya current month
+            // Allow previous month + current month
             const $date = $('#adj-date');
-            $date.attr('min', CURR_START);
-            $date.attr('max', CURR_END);
+            $date.attr('min', ADJ_START);
+            $date.attr('max', ADJ_END);
 
-            // default: today, tapi kalau today di luar range (edge case), set ke start month
-            const today = NOW_DATE || CURR_START;
-            if (today < CURR_START || today > CURR_END) $date.val(CURR_START);
-            else $date.val(today);
+            const defaultDate = ADJ_DEFAULT || NOW_DATE || ADJ_START;
 
-            toastr?.info(`Adjustment hanya boleh untuk periode berjalan: ${CURR_TEXT}`);
+            if (defaultDate < ADJ_START || defaultDate > ADJ_END) {
+                $date.val(ADJ_START);
+            } else {
+                $date.val(defaultDate);
+            }
+
+            toastr?.info(`Adjustment boleh untuk periode: ${ADJ_TEXT}`);
             $modalAdj.show();
         });
 
@@ -178,9 +187,9 @@
             else $btn.removeAttr('data-kt-indicator').prop('disabled', false);
         }
 
-        function isDateInCurrentMonth(dateStr) {
+        function isDateInAdjustmentRange(dateStr) {
             if (!dateStr) return false;
-            return dateStr >= CURR_START && dateStr <= CURR_END;
+            return dateStr >= ADJ_START && dateStr <= ADJ_END;
         }
 
         $('#form-adj-depr').on('submit', function(e) {
@@ -194,19 +203,18 @@
             if (!amount || Number(amount) === 0) return toastr?.error('Amount cannot be 0');
             if (!actualDate) return toastr?.error('Please choose actual date');
 
-            // RULE UI: hanya current month
-            if (!isDateInCurrentMonth(actualDate)) {
+            if (!isDateInAdjustmentRange(actualDate)) {
                 return Swal.fire({
                     icon: 'warning',
                     title: 'Not allowed',
-                    text: `Adjustment hanya boleh di periode berjalan (${CURR_TEXT}).`,
+                    text: `Adjustment hanya boleh untuk bulan sekarang atau bulan sebelumnya (${ADJ_TEXT}).`,
                     confirmButtonColor: '#EA242A'
                 });
             }
 
             Swal.fire({
                 title: 'Save adjustment depreciation?',
-                text: `This will recompute depreciation for ${CURR_TEXT}.`,
+                text: 'This will recompute depreciation from selected period if needed.',
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonColor: '#EA242A',
@@ -229,7 +237,6 @@
                             asset_uuid: assetUuid,
                             amount: amount,
                             actual_date: actualDate,
-                            // note: $('#adj-note').val() || ''  // kalau nanti kamu aktifin
                         }
                     });
 
@@ -242,25 +249,34 @@
                     bootstrap.Modal.getInstance(document.getElementById('modal-adj-depr'))
                         ?.hide();
 
-                    // refresh table
                     $('#tbl-monthly').DataTable().ajax.reload(null, false);
 
                 } catch (xhr) {
                     const rj = xhr?.responseJSON || {};
-                    if (rj?.code === 'ADJ_ONLY_CURRENT_PERIOD') {
+
+                    if (
+                        rj?.code === 'ADJ_ONLY_CURRENT_PERIOD' ||
+                        rj?.code === 'ADJ_ONLY_LATEST_DEPRECIATION_PERIOD' ||
+                        rj?.code === 'ADJ_DATE_OUT_OF_RANGE' ||
+                        rj?.code === 'PERIOD_NOT_PROCESSED' ||
+                        rj?.code === 'PERIOD_NOT_CLOSED'
+                    ) {
                         return Swal.fire('Not allowed', rj?.message || 'Not allowed',
                         'warning');
                     }
+
                     if (rj?.code === 'PREV_MONTH_NOT_PROCESSED') {
                         let msg = rj?.message || 'Prev month not processed';
                         if (rj?.need_period_text) msg +=
                             `\nPlease process: ${rj.need_period_text} first.`;
                         return Swal.fire('Blocked', msg, 'warning');
                     }
+
                     if (rj?.code === 'PREV_YEAR_NOT_BUILT') {
                         return Swal.fire('Blocked', rj?.message || 'Prev year not built',
                             'warning');
                     }
+
                     Swal.fire('Failed', rj?.message || 'Failed to save adjustment', 'error');
                 } finally {
                     setBusyAdj(false);

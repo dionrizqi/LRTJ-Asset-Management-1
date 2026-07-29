@@ -38,6 +38,10 @@ return [
             'use_ssl' => env('LDAP_SSL', false),
             'use_tls' => env('LDAP_TLS', false),
             'use_sasl' => env('LDAP_SASL', false),
+    
+    // 'domain' => env('LDAP_DOMAIN'),
+    // 'netbios' => env('LDAP_NETBIOS'),
+    
             'sasl_options' => [
                 // 'mech' => 'GSSAPI',
             ],

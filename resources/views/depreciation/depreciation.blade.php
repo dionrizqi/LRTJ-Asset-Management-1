@@ -1,7 +1,15 @@
 @php
     use Carbon\Carbon;
+
     $currentMonth = Carbon::now()->startOfMonth()->toDateString();
     $currentMonthText = Carbon::now()->isoFormat('MMMM YYYY');
+
+    $adjDateStart = Carbon::now()->subMonthNoOverflow()->startOfMonth()->toDateString();
+    $adjDateEnd = Carbon::now()->endOfMonth()->toDateString();
+    $adjDateToday = Carbon::now()->toDateString();
+    $adjDateText =
+        Carbon::now()->subMonthNoOverflow()->isoFormat('MMMM YYYY') . ' - ' . Carbon::now()->isoFormat('MMMM YYYY');
+
     $prevYearLabel = Carbon::now()->year - 1;
     $currentYear = Carbon::parse($currentMonth)->year;
 
@@ -221,15 +229,19 @@
                                 <input type="number" step="0.01" class="form-control" id="adj-amount"
                                     name="amount" placeholder="e.g. -1500000 or 1500000">
                                 <small class="text-muted d-block mt-1">
-                                    Positive value = increase NBV, negative value = decrease NBV.
+                                    Positive value = increase Accumulation Depreciation, negative value = decrease
+                                    Accumulation Depreciation.
                                 </small>
                             </div>
 
                             <div class="col-md-6">
                                 <label class="form-label required">Actual Date</label>
                                 <input type="date" class="form-control" id="adj-date" name="actual_date"
-                                    value="{{ $latestDeprDate }}" min="{{ $latestDeprMonthStart }}"
-                                    max="{{ $latestDeprMonthEnd }}">
+                                    value="{{ $adjDateToday }}" min="{{ $adjDateStart }}" max="{{ $adjDateEnd }}">
+
+                                <small class="text-muted d-block mt-1">
+                                    Actual Date allowed for previous/current month: <b>{{ $adjDateText }}</b>
+                                </small>
                             </div>
 
                             {{-- <div class="col-md-6">
@@ -265,6 +277,10 @@
             CURRENT_MONTH_START: @json(\Carbon\Carbon::now()->startOfMonth()->toDateString()), // YYYY-MM-01
             CURRENT_MONTH_END: @json(\Carbon\Carbon::now()->endOfMonth()->toDateString()), // YYYY-MM-DD
             CURRENT_MONTH_TEXT: @json(\Carbon\Carbon::now()->isoFormat('MMMM YYYY')),
+            ADJ_DATE_START: @json($adjDateStart),
+            ADJ_DATE_END: @json($adjDateEnd),
+            ADJ_DATE_DEFAULT: @json($adjDateToday),
+            ADJ_DATE_TEXT: @json($adjDateText),
 
             routes: {
                 dtMonthly: @json(route('depreciation.dt.monthly')),

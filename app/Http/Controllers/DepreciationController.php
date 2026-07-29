@@ -110,7 +110,24 @@ class DepreciationController extends Controller
 
         return ['year' => $year, 'period' => $period->toDateString()];
     }
+    private function reprocessDepreciationFrom(Carbon $start): void
+    {
+        $start = $start->copy()->startOfMonth();
 
+        $latest = $this->latestProcessedDepreciationPeriod();
+
+        if (! $latest) {
+            $latest = $start->copy();
+        }
+
+        if ($latest->lt($start)) {
+            $latest = $start->copy();
+        }
+
+        for ($p = $start->copy(); $p->lte($latest); $p->addMonth()) {
+            $this->processMonthlyDepr($p->copy());
+        }
+    }
     private function renderGuardError(\Throwable $e)
     {
         $msg = (string) $e->getMessage();
@@ -1472,10 +1489,23 @@ END AS remaining_useful_life_months
             'note'        => ['nullable', 'string', 'max:300'],
         ]);
 
-        $actual = Carbon::parse($data['actual_date']);
+        $actual = Carbon::parse($data['actual_date'])->startOfDay();
         $period = $actual->copy()->startOfMonth();
 
-        // Ambil bulan terakhir depreciation yang sudah diproses/closing
+        $rangeStart = now()->subMonthNoOverflow()->startOfMonth()->startOfDay();
+        $rangeEnd   = now()->endOfMonth()->endOfDay();
+
+        if ($actual->lt($rangeStart) || $actual->gt($rangeEnd)) {
+            return response()->json([
+                'ok' => false,
+                'code' => 'ADJ_DATE_OUT_OF_RANGE',
+                'message' => 'Adjustment Depreciation hanya bisa dilakukan untuk bulan sekarang atau bulan sebelumnya.',
+                'allowed_from' => $rangeStart->toDateString(),
+                'allowed_to' => $rangeEnd->toDateString(),
+                'allowed_text' => $rangeStart->isoFormat('MMMM YYYY') . ' - ' . $rangeEnd->isoFormat('MMMM YYYY'),
+            ], 422);
+        }
+
         $latestPeriod = $this->latestProcessedDepreciationPeriod();
 
         if (! $latestPeriod) {
@@ -1486,21 +1516,18 @@ END AS remaining_useful_life_months
             ], 422);
         }
 
-        // Rule baru:
-        // Adjustment hanya boleh di bulan terakhir depreciation diproses,
-        // bukan berdasarkan bulan kalender sekarang.
-        if (! $period->equalTo($latestPeriod)) {
+        if ($period->gt($latestPeriod)) {
             return response()->json([
                 'ok' => false,
-                'code' => 'ADJ_ONLY_LATEST_DEPRECIATION_PERIOD',
-                'message' => 'Adjustment Depreciation hanya bisa dilakukan di periode depresiasi terakhir yang sudah diproses.',
-                'need_period' => $latestPeriod->toDateString(),
-                'need_period_text' => $latestPeriod->isoFormat('MMMM YYYY'),
+                'code' => 'PERIOD_NOT_PROCESSED',
+                'message' => 'Periode adjustment belum diproses depresiasinya.',
+                'need_period' => $period->toDateString(),
+                'latest_period' => $latestPeriod->toDateString(),
+                'latest_period_text' => $latestPeriod->isoFormat('MMMM YYYY'),
             ], 422);
         }
 
         try {
-            // Safety: pastikan periode latest itu memang sudah closing
             $closingExists = AssetDeprMonthClosing::query()
                 ->whereDate('period', $period->toDateString())
                 ->exists();
@@ -1508,17 +1535,13 @@ END AS remaining_useful_life_months
             if (! $closingExists) {
                 return response()->json([
                     'ok' => false,
-                    'code' => 'LATEST_PERIOD_NOT_CLOSED',
-                    'message' => 'Periode depresiasi terakhir belum valid/closing.',
+                    'code' => 'PERIOD_NOT_CLOSED',
+                    'message' => 'Periode adjustment belum diproses/closing.',
                     'need_period' => $period->toDateString(),
                     'need_period_text' => $period->isoFormat('MMMM YYYY'),
                 ], 422);
             }
 
-            // Guard tetap dipakai:
-            // - cek year locked
-            // - cek prev year built
-            // - cek prev month processed
             $this->guardWritablePeriod($period, 'adjDepr', [
                 'require_prev_month' => true,
                 'enforce_first_run_min_eligible' => false,
@@ -1534,8 +1557,9 @@ END AS remaining_useful_life_months
                 'note'              => $data['note'] ?? null,
             ]);
 
-            // Recompute periode terakhir tersebut
-            $this->processMonthlyDepr($period);
+            // Kalau adjustment dibuat di bulan sebelumnya,
+            // bulan setelahnya harus ikut dihitung ulang karena opening/accum/ending bisa berubah.
+            $this->reprocessDepreciationFrom($period);
 
             return response()->json([
                 'ok' => true,
@@ -1547,6 +1571,7 @@ END AS remaining_useful_life_months
             if ($resp = $this->renderGuardError($e)) return $resp;
 
             report($e);
+
             return response()->json([
                 'ok' => false,
                 'code' => 'SERVER_ERROR',
@@ -2418,25 +2443,70 @@ END AS remaining_useful_life_months
             'message' => 'Transfer rejected.',
         ]);
     }
-
     public function destroyTransferRequest(string $uuid)
     {
         abort_unless($this->canDeleteTransferRequests(), 403);
+
         $req = AssetDeprTransferRequest::where('uuid', $uuid)->firstOrFail();
 
-        if ($req->kode_status !== self::STATUS_APR) {
+        $period = Carbon::parse($req->actual_date)->startOfMonth();
+
+        try {
+            // Kalau sudah ACC, berarti sudah posting ke movement, assets_value, ledger.
+            // Jadi harus rollback efek posting-nya.
+            if ($req->kode_status === self::STATUS_ACC) {
+                $this->guardWritablePeriod($period, 'deleteTransferRequest', [
+                    'require_prev_month' => true,
+                    'enforce_first_run_min_eligible' => false,
+                ]);
+            }
+
+            DB::transaction(function () use ($req) {
+                if ($req->kode_status === self::STATUS_ACC) {
+                    $amount = (float) $req->amount;
+
+                    // 1. Balikin assets_value karena waktu approve applyTransfer()
+                    //    increment total di asset penerima dan decrement total di asset pemberi.
+                    DB::table('assets_value')
+                        ->where('asset_uuid', $req->to_asset_uuid)
+                        ->decrement('total', $amount);
+
+                    DB::table('assets_value')
+                        ->where('asset_uuid', $req->from_asset_uuid)
+                        ->increment('total', $amount);
+
+                    // 2. Hapus movement hasil posting request ini.
+                    //    Ini yang bikin transfers_in/out masih kebaca di ledger.
+                    AssetDeprMovement::query()
+                        ->where('source_type', 'depr_transfer_request')
+                        ->where('source_uuid', $req->uuid)
+                        ->delete();
+                }
+
+                // 3. Soft delete request-nya.
+                $req->delete();
+            });
+
+            // 4. Recalculate dari bulan request sampai latest period,
+            //    karena opening balance bulan berikutnya ikut terpengaruh.
+            if ($req->kode_status === self::STATUS_ACC) {
+                $this->reprocessDepreciationFrom($period);
+            }
+
+            return response()->json([
+                'ok'      => true,
+                'message' => 'Transfer request deleted and depreciation recalculated.',
+            ]);
+        } catch (\Throwable $e) {
+            if ($resp = $this->renderGuardError($e)) return $resp;
+
+            report($e);
+
             return response()->json([
                 'ok'      => false,
-                'message' => 'Only APR requests can be deleted.',
-            ], 422);
+                'message' => $e->getMessage() ?: 'Failed to delete transfer request.',
+            ], 500);
         }
-
-        $req->delete();
-
-        return response()->json([
-            'ok'      => true,
-            'message' => 'Transfer request deleted.',
-        ]);
     }
     public function downloadTransferRequestAttachment(string $uuid)
     {
@@ -2573,12 +2643,14 @@ END AS remaining_useful_life_months
 
     private function assertActualDateIsCurrentMonth(string|\DateTimeInterface $actualDate, string $context = 'transfer_request'): void
     {
-        $d = Carbon::parse($actualDate);
-        $now = now();
+        $d = Carbon::parse($actualDate)->startOfDay();
 
-        if ($d->format('Y-m') !== $now->format('Y-m')) {
+        $start = now()->subMonthNoOverflow()->startOfMonth()->startOfDay();
+        $end   = now()->endOfMonth()->endOfDay();
+
+        if ($d->lt($start) || $d->gt($end)) {
             throw ValidationException::withMessages([
-                'actual_date' => "Actual Date for {$context} must be within current month ({$now->isoFormat('MMMM YYYY')}).",
+                'actual_date' => "Actual Date for {$context} must be within {$start->isoFormat('MMMM YYYY')} - {$end->isoFormat('MMMM YYYY')}.",
             ]);
         }
     }

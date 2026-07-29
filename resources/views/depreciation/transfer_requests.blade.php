@@ -2,12 +2,17 @@
     use Carbon\Carbon;
 
     $currentMonthStart = Carbon::now()->startOfMonth()->toDateString();
-    $currentMonthEnd   = Carbon::now()->endOfMonth()->toDateString();
-    $today             = Carbon::now()->toDateString();
-    $currentMonthText  = Carbon::now()->isoFormat('MMMM YYYY');
+    $currentMonthEnd = Carbon::now()->endOfMonth()->toDateString();
+
+    $prevMonthStart = Carbon::now()->subMonthNoOverflow()->startOfMonth()->toDateString();
+
+    $today = Carbon::now()->toDateString();
+
+    $allowedTransferDateText =
+        Carbon::now()->subMonthNoOverflow()->isoFormat('MMMM YYYY') . ' - ' . Carbon::now()->isoFormat('MMMM YYYY');
 
     $prevYearLabel = Carbon::now()->year - 1;
-    $currentYear   = Carbon::parse($currentMonthStart)->year;
+    $currentYear = Carbon::parse($currentMonthStart)->year;
 @endphp
 
 @extends('layouts.app')
@@ -86,7 +91,7 @@
                         <div class="col-md-4">
                             <label class="form-label">Asset (code / description)</label>
                             <input type="text" id="f-asset" class="form-control"
-                                   placeholder="e.g. A1101000002-00 / Laptop Dell">
+                                placeholder="e.g. A1101000002-00 / Laptop Dell">
                         </div>
                     </div>
                 </div>
@@ -117,22 +122,22 @@
 
                 <div class="card-body">
                     <table id="tbl-transfer-requests"
-                           class="table table-striped table-row-bordered table-column-bordered gy-5 gs-7 border rounded w-100">
+                        class="table table-striped table-row-bordered table-column-bordered gy-5 gs-7 border rounded w-100">
                         <thead class="table-light">
-                        <tr>
-                            <th class="min-w-150px">Transaction Number</th>
-                            <th class="min-w-150px">From Asset</th>
-                            <th class="min-w-150px">To Asset</th>
-                            <th class="min-w-150px">Type</th>
-                            <th class="min-w-150px">Amount</th>
-                            <th class="min-w-150px">Actual Date</th>
-                            <th class="min-w-150px">Status</th>
-                            <th class="min-w-150px">Requested By</th>
-                            <th class="min-w-150px">Approved By</th>
-                            <th class="min-w-150px">Attachment</th>
-                            <th class="min-w-200px">Note</th>
-                            <th class="min-w-200px">Actions</th>
-                        </tr>
+                            <tr>
+                                <th class="min-w-150px">Transaction Number</th>
+                                <th class="min-w-150px">From Asset</th>
+                                <th class="min-w-150px">To Asset</th>
+                                <th class="min-w-150px">Type</th>
+                                <th class="min-w-150px">Amount</th>
+                                <th class="min-w-150px">Actual Date</th>
+                                <th class="min-w-150px">Status</th>
+                                <th class="min-w-150px">Requested By</th>
+                                <th class="min-w-150px">Approved By</th>
+                                <th class="min-w-150px">Attachment</th>
+                                <th class="min-w-200px">Note</th>
+                                <th class="min-w-200px">Actions</th>
+                            </tr>
                         </thead>
                     </table>
                 </div>
@@ -169,10 +174,10 @@
                             <div class="col-md-6">
                                 <label class="form-label required">Transfer Type</label>
                                 <select class="form-select" id="edit-transfer-type" name="transfer_type">
-                                    
-                                <option value="tf-val">1. Transfer Value Current Month</option>
-                                <option value="acq_fix">2. Transfer Value Multi Years</option>
-                                <option value="carry_over_gross_accum">3. Transfer Value Current Year</option>
+
+                                    <option value="tf-val">1. Transfer Value Current Month</option>
+                                    <option value="acq_fix">2. Transfer Value Multi Years</option>
+                                    <option value="carry_over_gross_accum">3. Transfer Value Current Year</option>
                                     <!--<option value="tf-val">1. Partials/Full (Gross only)</option>-->
                                     <!--<option value="acq_fix">2. Acquisition Fix</option>-->
                                     <!--<option value="carry_over_gross_accum">3. Carry-Over (Gross + Accum)</option>-->
@@ -185,14 +190,14 @@
                             <div class="col-md-6">
                                 <label class="form-label required">Amount</label>
                                 <input type="number" step="0.01" min="0.01" class="form-control"
-                                       id="edit-amount" name="amount">
+                                    id="edit-amount" name="amount">
                             </div>
 
                             <div class="col-md-6">
                                 <label class="form-label required">Actual Date</label>
                                 <input type="date" class="form-control" id="edit-actual-date" name="actual_date">
                                 <small class="text-muted d-block mt-1">
-                                    Actual Date locked to current month: <b>{{ $currentMonthText }}</b>
+                                    Actual Date allowed for previous/current month: <b>{{ $allowedTransferDateText }}</b>
                                 </small>
                             </div>
 
@@ -250,21 +255,21 @@
                             <div class="col-12">
                                 <label class="form-label"><b>Transfer Type :</b></label>
                                 <div class="btn-group" role="group" aria-label="Transfer type"
-                                     style="border: solid .5px black; width:100%;">
+                                    style="border: solid .5px black; width:100%;">
                                     <input type="radio" class="btn-check" name="tr-type" id="tr-type-tf-val"
-                                           value="tf-val" checked>
+                                        value="tf-val" checked>
                                     <label class="btn btn-outline-danger btn-sm" for="tr-type-tf-val">
                                         1. Transfer Value Current Month
                                     </label>
 
                                     <input type="radio" class="btn-check" name="tr-type" id="tr-type-acq-fix"
-                                           value="acq_fix">
+                                        value="acq_fix">
                                     <label class="btn btn-outline-danger btn-sm" for="tr-type-acq-fix">
                                         2. Transfer Value Multi Years
                                     </label>
 
                                     <input type="radio" class="btn-check" name="tr-type" id="tr-type-carry"
-                                           value="carry_over_gross_accum">
+                                        value="carry_over_gross_accum">
                                     <label class="btn btn-outline-danger btn-sm" for="tr-type-carry">
                                         3. Transfer Value Current Year
                                     </label>
@@ -273,9 +278,8 @@
 
                             {{-- NEW: Rule Info Box (changes based on transfer type) --}}
                             <div class="col-12">
-                                <div id="tr-type-rule"
-                                     class="alert alert-info py-3 px-4 mb-0"
-                                     style="border-left: 4px solid #EA242A;">
+                                <div id="tr-type-rule" class="alert alert-info py-3 px-4 mb-0"
+                                    style="border-left: 4px solid #EA242A;">
                                     {{-- filled by JS --}}
                                 </div>
                             </div>
@@ -351,7 +355,7 @@
                             <div class="col-md-6">
                                 <label class="form-label required">Amount</label>
                                 <input type="number" step="0.01" min="0.01" class="form-control" id="tr-amount"
-                                       name="amount" placeholder="e.g. 15000000">
+                                    name="amount" placeholder="e.g. 15000000">
                                 <small id="tr-cap-help" class="text-muted d-block mt-1"></small>
                                 <small id="tr-carry-help" class="text-warning d-block mt-1"></small>
                                 <div id="tr-preview" class="alert d-none py-2 px-3 mt-2 small"></div>
@@ -360,9 +364,9 @@
                             <div class="col-md-6">
                                 <label class="form-label required">Actual Date</label>
                                 <input type="date" class="form-control" id="tr-date" name="actual_date"
-                                       value="{{ $today }}">
+                                    value="{{ $today }}">
                                 <small class="text-muted d-block mt-1">
-                                    Actual Date locked to current month: <b>{{ $currentMonthText }}</b>
+                                    Actual Date locked to current month: <b>{{ $allowedTransferDateText  }}</b>
                                 </small>
                             </div>
 
@@ -406,10 +410,10 @@
                 .format(Number(v ?? 0));
 
             // ==== CURRENT MONTH LOCK (from PHP) ====
-            const CUR_MONTH_START = @json($currentMonthStart);
-            const CUR_MONTH_END = @json($currentMonthEnd);
+            const TRANSFER_DATE_START = @json($prevMonthStart);
+            const TRANSFER_DATE_END = @json($currentMonthEnd);
             const TODAY = @json($today);
-            const CUR_MONTH_TEXT = @json($currentMonthText);
+            const TRANSFER_DATE_TEXT = @json($allowedTransferDateText);
 
             const ATTACH_URL_TPL = @json(route('depreciation.transfer-requests.attachment', '__UUID__'));
             const APPROVE_URL_TPL = @json(route('depreciation.transfer-requests.approve', '__UUID__'));
@@ -428,37 +432,37 @@
             const fmt2 = (v) => money2(v);
             const getTransferType = () => $('input[name="tr-type"]:checked').val();
 
-            function clampDateToCurrentMonth(inputEl) {
+            function clampDateToTransferRange(inputEl) {
                 const $el = $(inputEl);
                 const val = $el.val();
                 if (!val) return;
 
-                if (val < CUR_MONTH_START) {
-                    $el.val(CUR_MONTH_START);
+                if (val < TRANSFER_DATE_START) {
+                    $el.val(TRANSFER_DATE_START);
                     Swal.fire({
                         icon: 'warning',
                         title: 'Actual Date locked',
-                        text: `Actual Date must be within ${CUR_MONTH_TEXT}.`
+                        text: `Actual Date must be within ${TRANSFER_DATE_TEXT}.`
                     });
-                } else if (val > CUR_MONTH_END) {
-                    $el.val(CUR_MONTH_END);
+                } else if (val > TRANSFER_DATE_END) {
+                    $el.val(TRANSFER_DATE_END);
                     Swal.fire({
                         icon: 'warning',
                         title: 'Actual Date locked',
-                        text: `Actual Date must be within ${CUR_MONTH_TEXT}.`
+                        text: `Actual Date must be within ${TRANSFER_DATE_TEXT}.`
                     });
                 }
             }
 
-            function applyCurrentMonthLock(selector, defaultValue) {
+            function applyTransferDateLock(selector, defaultValue) {
                 const $el = $(selector);
-                $el.attr('min', CUR_MONTH_START);
-                $el.attr('max', CUR_MONTH_END);
+                $el.attr('min', TRANSFER_DATE_START);
+                $el.attr('max', TRANSFER_DATE_END);
 
                 if (defaultValue && !$el.val()) $el.val(defaultValue);
 
                 $el.off('change.lock').on('change.lock', function() {
-                    clampDateToCurrentMonth(this);
+                    clampDateToTransferRange(this);
                 });
             }
 
@@ -509,8 +513,8 @@
 
                 // carry_over_gross_accum
                 $box
-                        .removeClass('alert-warning alert-danger')
-                        .addClass('alert-info')
+                    .removeClass('alert-warning alert-danger')
+                    .addClass('alert-info')
                     .html(`
                         <div class="fw-bold mb-1">Rule: Transfer Value Current Year</div>
                         <ol class="mb-0 ps-4">
@@ -552,7 +556,7 @@
 
                 // LOCK actual date to current month
                 $('#tr-date').val(TODAY);
-                applyCurrentMonthLock('#tr-date', TODAY);
+                applyTransferDateLock('#tr-date', TODAY);
 
                 $modal.show();
                 syncTypeUI();
@@ -654,7 +658,8 @@
                             const code = row.from_code || '';
                             const name = row.from_name || '';
                             if (type !== 'display') return code;
-                            const url = SHOW_URL_TPL.replace('__UUID__', encodeURIComponent(row.from_asset_uuid));
+                            const url = SHOW_URL_TPL.replace('__UUID__', encodeURIComponent(row
+                                .from_asset_uuid));
                             const text = code || data || '';
                             return `
                                 <div class="fw-semibold">
@@ -672,7 +677,8 @@
                             const code = row.to_code || '';
                             const name = row.to_name || '';
                             if (type !== 'display') return code;
-                            const url = SHOW_URL_TPL.replace('__UUID__', encodeURIComponent(row.to_asset_uuid));
+                            const url = SHOW_URL_TPL.replace('__UUID__', encodeURIComponent(row
+                                .to_asset_uuid));
                             const text = code || data || '';
                             return `
                                 <div class="fw-semibold">
@@ -767,7 +773,8 @@
                         name: 'attachment_path',
                         render: function(path, type, row) {
                             if (!path) return '<span class="text-muted">-</span>';
-                            const url = ATTACH_URL_TPL.replace('__UUID__', encodeURIComponent(row.uuid));
+                            const url = ATTACH_URL_TPL.replace('__UUID__', encodeURIComponent(row
+                                .uuid));
                             return `<a href="${url}" target="_blank" class="btn btn-sm btn-light-primary">Download</a>`;
                         }
                     },
@@ -779,7 +786,6 @@
                             return v ? $('<div/>').text(v).html() : '<span class="text-muted">-</span>';
                         }
                     },
-
                     {
                         data: null,
                         orderable: false,
@@ -795,16 +801,19 @@
                                 `<button type="button" class="btn btn-light-success btn-approve" data-id="${id}">Approve</button>`;
                             const btnReject =
                                 `<button type="button" class="btn btn-light-warning btn-reject" data-id="${id}">Reject</button>`;
-                            const btnDelete = '';
+                            const btnDelete =
+                                `<button type="button" class="btn btn-light-danger btn-delete" data-id="${id}">Delete</button>`;
 
                             if (status === 'APR') {
                                 if (TR_PERMS.edit) buttons += btnEdit;
                                 if (TR_PERMS.approve) buttons += btnApprove + btnReject;
                             }
+
+                            // Delete boleh semua status
                             if (TR_PERMS.delete) buttons += btnDelete;
 
                             if (!buttons) return '';
-                            return '<div class="btn-group btn-group-sm">' + buttons + '</div>';
+                            return '<div class="btn-group btn-group-sm gap-1">' + buttons + '</div>';
                         }
                     }
                 ]
@@ -827,6 +836,60 @@
                 $('#f-asset').val('');
                 $('#f-requester').val(null).trigger('change');
                 tbl.ajax.reload();
+            });
+
+            $('#tbl-transfer-requests').on('click', '.btn-delete', function() {
+                const uuid = $(this).data('id');
+
+                if (!uuid) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'Missing request ID.'
+                    });
+                    return;
+                }
+
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Delete transfer request?',
+                    text: 'This request will be moved to trash.',
+                    showCancelButton: true,
+                    confirmButtonColor: '#EA242A',
+                    cancelButtonColor: '#B5B5B6',
+                    confirmButtonText: 'Yes, delete',
+                    cancelButtonText: 'Cancel'
+                }).then(function(r) {
+                    if (!r.isConfirmed) return;
+
+                    Swal.fire({
+                        title: 'Deleting…',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal.showLoading()
+                    });
+
+                    $.ajax({
+                        url: DELETE_URL_TPL.replace('__UUID__', encodeURIComponent(uuid)),
+                        type: 'DELETE',
+                        data: {
+                            _token: "{{ csrf_token() }}"
+                        }
+                    }).done(function(res) {
+                        tbl.ajax.reload(null, false);
+
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Deleted',
+                            text: res.message || 'Transfer request deleted.'
+                        });
+                    }).fail(function(xhr) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Oops',
+                            text: xhr.responseJSON?.message || 'Delete failed'
+                        });
+                    });
+                });
             });
 
             $('#btnExport').on('click', function(e) {
@@ -928,7 +991,8 @@
 
                 $('#edit-uuid').val(rowData.uuid);
 
-                const fromText = (rowData.from_code || '') + (rowData.from_name ? ' - ' + rowData.from_name : '');
+                const fromText = (rowData.from_code || '') + (rowData.from_name ? ' - ' + rowData.from_name :
+                    '');
                 const toText = (rowData.to_code || '') + (rowData.to_name ? ' - ' + rowData.to_name : '');
 
                 $('#edit-from-asset').val(fromText);
@@ -940,7 +1004,7 @@
                 const actualIso = (rowData.actual_date || '').substring(0, 10);
                 $('#edit-actual-date').val(actualIso);
 
-                applyCurrentMonthLock('#edit-actual-date', actualIso || TODAY);
+                applyTransferDateLock('#edit-actual-date', actualIso || TODAY);
 
                 $('#edit-note').val(rowData.note || '');
 
@@ -1008,8 +1072,8 @@
                         title: 'Actual Date locked',
                         text: `Actual Date must be within ${CUR_MONTH_TEXT}.`
                     });
-                    if (date < CUR_MONTH_START) $('#edit-actual-date').val(CUR_MONTH_START);
-                    else $('#edit-actual-date').val(CUR_MONTH_END);
+                    if (date < TRANSFER_DATE_START) $('#edit-actual-date').val(TRANSFER_DATE_START);
+                    else $('#edit-actual-date').val(TRANSFER_DATE_END);
                     return;
                 }
 
@@ -1112,7 +1176,7 @@
 
             // lock + refresh
             $('#tr-date').on('change', function() {
-                clampDateToCurrentMonth(this);
+                clampDateToTransferRange(this);
                 syncTypeUI();
             });
 
@@ -1165,7 +1229,8 @@
                         actual_date: date
                     });
                     const cap = res || {};
-                    const lastP = cap.last_closed_period ? new Date(cap.last_closed_period).toISOString().slice(0, 10) : '-';
+                    const lastP = cap.last_closed_period ? new Date(cap.last_closed_period).toISOString().slice(0,
+                        10) : '-';
                     $('#tr-cap-help').text(
                         `Max: ${fmt2(cap.remaining)} (Begin: ${fmt2(cap.begin_total)} − Last NBV ${lastP}: ${fmt2(cap.last_nbv)} − This month OUT: ${fmt2(cap.already_out)})`
                     );
@@ -1195,7 +1260,8 @@
                     });
 
                     const d = res || {};
-                    const lc = d.last_closed_period ? new Date(d.last_closed_period).toISOString().slice(0, 10) : '-';
+                    const lc = d.last_closed_period ? new Date(d.last_closed_period).toISOString().slice(0, 10) :
+                        '-';
 
                     $('#tr-preview').removeClass('d-none').html(
                         `Total Gross A: <b>${fmt2(d.total_gross)}</b> · Accum as of <b>${lc}</b>: <b>${fmt2(d.accum_as_of_last)}</b><br>
@@ -1206,7 +1272,8 @@
                     $('#tr-amount').data('capGross', Number(d.cap_remaining || 0));
 
                     if (amount > Number(d.cap_remaining || 0)) {
-                        $('#tr-carry-help').text('Amount exceeds max carry-over (gross remaining). Please reduce the amount.');
+                        $('#tr-carry-help').text(
+                            'Amount exceeds max carry-over (gross remaining). Please reduce the amount.');
                     }
                 } catch (e) {
                     console.error(e);
@@ -1218,7 +1285,6 @@
                 if (b) $btnSave.attr('data-kt-indicator', 'on').prop('disabled', true);
                 else $btnSave.removeAttr('data-kt-indicator').prop('disabled', false);
             };
-
             $('#form-transfer').on('submit', async function(e) {
                 e.preventDefault();
 
@@ -1229,32 +1295,47 @@
                 const type = getTransferType();
 
                 if (!fromUUID || !toUUID) {
-                    Swal.fire({ icon: 'warning', title: 'Validation error', text: 'Please pick both assets' });
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Validation error',
+                        text: 'Please pick both assets'
+                    });
                     return;
                 }
                 if (fromUUID === toUUID) {
-                    Swal.fire({ icon: 'warning', title: 'Validation error', text: 'From/To asset cannot be the same' });
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Validation error',
+                        text: 'From/To asset cannot be the same'
+                    });
                     return;
                 }
                 if (!(amount > 0)) {
-                    Swal.fire({ icon: 'warning', title: 'Validation error', text: 'Amount must be greater than 0' });
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Validation error',
+                        text: 'Amount must be greater than 0'
+                    });
                     return;
                 }
                 if (!date) {
-                    Swal.fire({ icon: 'warning', title: 'Validation error', text: 'Actual Date is required' });
-                    return;
-                }
-
-                // enforce lock for add new too
-                if (date < CUR_MONTH_START || date > CUR_MONTH_END) {
                     Swal.fire({
                         icon: 'warning',
-                        title: 'Actual Date locked',
-                        text: `Actual Date must be within ${CUR_MONTH_TEXT}.`
+                        title: 'Validation error',
+                        text: 'Actual Date is required'
                     });
                     return;
                 }
 
+                // enforce lock for add new too
+                if (date < TRANSFER_DATE_START || date > TRANSFER_DATE_END) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Actual Date locked',
+                        text: `Actual Date must be within ${TRANSFER_DATE_TEXT}.`
+                    });
+                    return;
+                }
                 // ===== Type-based validations per rules =====
                 const y = yearOf(date);
                 const thisYear = Number(String(TODAY).substring(0, 4));
@@ -1278,7 +1359,8 @@
                         // if not cached yet, fetch brief for fromUUID
                         if (!acqTotal) {
                             try {
-                                const d = await $.getJSON('{{ route('assets.brief', ':id') }}'.replace(':id', fromUUID));
+                                const d = await $.getJSON('{{ route('assets.brief', ':id') }}'.replace(
+                                    ':id', fromUUID));
                                 acqTotal = Number(d?.commercial_acq_cost || d?.total || 0);
                                 $('#tr-amount').data('acqTotal', acqTotal);
                             } catch (_) {}
@@ -1349,7 +1431,9 @@
                         data: fd,
                         processData: false,
                         contentType: false,
-                        headers: { 'X-CSRF-TOKEN': "{{ csrf_token() }}" }
+                        headers: {
+                            'X-CSRF-TOKEN': "{{ csrf_token() }}"
+                        }
                     });
 
                     Swal.fire({
@@ -1363,15 +1447,19 @@
                 } catch (err) {
                     console.error(err);
                     const msg = err?.responseJSON?.message || 'Failed to save transfer request';
-                    Swal.fire({ icon: 'error', title: 'Error', text: msg });
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: msg
+                    });
                 } finally {
                     setBusyTransfer(false);
                 }
             });
 
             // ===== init lock on page load too (safety) =====
-            applyCurrentMonthLock('#tr-date', TODAY);
-            applyCurrentMonthLock('#edit-actual-date', null);
+            applyTransferDateLock('#tr-date', TODAY);
+            applyTransferDateLock('#edit-actual-date', null);
 
             // init rule box default
             setTypeRuleBox();

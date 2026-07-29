@@ -136,7 +136,7 @@ Route::middleware('ldap.session')->group(function () {
             Route::get('/brief/{uuid}',    [AssetsController::class, 'brief'])->name('brief');
 
             // DATATABLE
-            Route::get('/datatable',       [AssetsController::class, 'datatable'])->name('datatable');
+            Route::match(['GET', 'POST'], '/datatable-all', [AssetsController::class, 'datatable'])->name('datatable');
 
             // AJAX SELECT OPTIONS
             Route::get('/select-asset-parent',        [AssetsController::class, 'select_asset_parent'])->name('parent.options');
