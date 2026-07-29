@@ -76,7 +76,7 @@ class AuthController extends Controller
         }
 
         /* ------------------------------------------------------------------
-         * 2) LOCAL DB LOGIN
+         * 2) LOCAL DATABASE LOGIN
          * ------------------------------------------------------------------ */
         try {
             $localUser = User::query()
@@ -98,9 +98,10 @@ class AuthController extends Controller
         }
 
         /* ------------------------------------------------------------------
-         * 3) LDAP CONFIG
-         * config/ldap.php memakai struktur bawaan LdapRecord:
-         * ldap.connections.{connection-name}.*
+         * 3) LDAP CONFIGURATION
+         *
+         * Mengikuti struktur standar config/ldap.php milik LdapRecord.
+         * Tidak menggunakan option tambahan domain/netbios.
          * ------------------------------------------------------------------ */
         $connectionName = trim((string) config('ldap.default', 'default')) ?: 'default';
         $ldapConfig = (array) config("ldap.connections.{$connectionName}", []);
@@ -112,13 +113,15 @@ class AuthController extends Controller
 
         $port = (int) ($ldapConfig['port'] ?? 389);
         $baseDn = trim((string) ($ldapConfig['base_dn'] ?? ''), " \t\n\r\0\x0B\"'");
-        $bindDn = $ldapConfig['username'] ?? null;
-        $bindPassword = $ldapConfig['password'] ?? null;
-        $timeout = (int) ($ldapConfig['timeout'] ?? 5);
+        $bindDn = isset($ldapConfig['username'])
+            ? trim((string) $ldapConfig['username'])
+            : null;
+        $bindPassword = isset($ldapConfig['password'])
+            ? (string) $ldapConfig['password']
+            : null;
+        $timeout = max(1, (int) ($ldapConfig['timeout'] ?? 5));
         $useSsl = filter_var($ldapConfig['use_ssl'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $useTls = filter_var($ldapConfig['use_tls'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        $domain = trim((string) ($ldapConfig['domain'] ?? ''));
-        $netbios = trim((string) ($ldapConfig['netbios'] ?? ''));
 
         if ($host === '' || $baseDn === '') {
             \Log::error('API LDAP configuration incomplete', [
@@ -144,26 +147,32 @@ class AuthController extends Controller
 
         /* ------------------------------------------------------------------
          * 4) LDAP AUTHENTICATION
+         *
+         * Domain UPN diambil otomatis dari:
+         * - username login user@domain;
+         * - LDAP_USERNAME bila berupa service-account@domain;
+         * - LDAP_BASE_DN (DC=office,DC=example,DC=com).
          * ------------------------------------------------------------------ */
         $shortUsername = $this->shortDirectoryUsername($username);
+        $domain = $this->resolveDirectoryDomain($username, $bindDn, $baseDn);
+
         $candidateIdentities = [];
 
-        // Input berupa email/UPN atau DOMAIN\\username dapat langsung di-bind.
-        if (str_contains($username, '@') || str_contains($username, '\\')) {
+        if (str_contains($username, '@')) {
             $candidateIdentities[] = $username;
-        }
-
-        if ($domain !== '' && ! str_contains($username, '@') && ! str_contains($username, '\\')) {
+        } elseif ($domain !== null) {
             $candidateIdentities[] = $shortUsername . '@' . $domain;
         }
 
-        if ($netbios !== '' && ! str_contains($username, '@') && ! str_contains($username, '\\')) {
-            $candidateIdentities[] = $netbios . '\\' . $shortUsername;
-        }
-
-        // Fallback untuk OpenLDAP.
+        // Fallback OpenLDAP. Tidak mengganggu Active Directory karena hanya
+        // dicoba setelah kandidat UPN.
         $candidateIdentities[] = "uid={$shortUsername},{$baseDn}";
-        $candidateIdentities = array_values(array_unique(array_filter($candidateIdentities)));
+
+        $candidateIdentities = array_values(
+            array_unique(
+                array_filter($candidateIdentities)
+            )
+        );
 
         $authenticated = false;
 
@@ -182,7 +191,7 @@ class AuthController extends Controller
 
                     \Log::info('API LDAP direct bind success', [
                         'username' => $username,
-                        'identity_type' => $this->identityType($identity),
+                        'identity_type' => str_contains($identity, '@') ? 'upn' : 'dn',
                     ]);
 
                     break;
@@ -190,13 +199,12 @@ class AuthController extends Controller
             } catch (\Throwable $e) {
                 \Log::warning('API LDAP direct bind exception', [
                     'username' => $username,
-                    'identity_type' => $this->identityType($identity),
                     'error' => $e->getMessage(),
                 ]);
             }
         }
 
-        // Bila direct bind gagal, cari distinguishedName user menggunakan akun bind.
+        // Jika direct bind gagal, cari distinguishedName user memakai akun bind.
         if (! $authenticated) {
             try {
                 $foundDn = $this->ldap->findUserDn(
@@ -209,18 +217,21 @@ class AuthController extends Controller
                     $timeout,
                     $useSsl,
                     $useTls,
-                    $domain !== '' ? $domain : null,
+                    $domain,
                 );
 
-                if ($foundDn && $this->ldap->bindDn(
-                    $host,
-                    $port,
-                    $foundDn,
-                    $password,
-                    $timeout,
-                    $useSsl,
-                    $useTls,
-                )) {
+                if (
+                    $foundDn &&
+                    $this->ldap->bindDn(
+                        $host,
+                        $port,
+                        $foundDn,
+                        $password,
+                        $timeout,
+                        $useSsl,
+                        $useTls,
+                    )
+                ) {
                     $authenticated = true;
 
                     \Log::info('API LDAP DN bind success', [
@@ -242,8 +253,7 @@ class AuthController extends Controller
         }
 
         /* ------------------------------------------------------------------
-         * 5) FETCH ATTRIBUTES + SYNC LOCAL USER
-         * Dibuat sama dengan perilaku web: username input dipertahankan.
+         * 5) FETCH LDAP ATTRIBUTES
          * ------------------------------------------------------------------ */
         try {
             $attrs = $this->ldap->fetchAttributes(
@@ -256,7 +266,7 @@ class AuthController extends Controller
                 $timeout,
                 $useSsl,
                 $useTls,
-                $domain !== '' ? $domain : null,
+                $domain,
             );
         } catch (\Throwable $e) {
             \Log::warning('API LDAP attribute fetch failed', [
@@ -267,7 +277,7 @@ class AuthController extends Controller
             $attrs = [];
         }
 
-        // ldap_get_entries() menurunkan nama key atribut menjadi lowercase.
+        // ldap_get_entries() mengubah nama key atribut menjadi lowercase.
         $name = $attrs['displayname'][0]
             ?? $attrs['cn'][0]
             ?? $attrs['name'][0]
@@ -281,59 +291,73 @@ class AuthController extends Controller
             ?? $attrs['department'][0]
             ?? null;
 
-        $user = User::findForDirectoryIdentity($username, $email);
-        $isNew = $user === null;
+        /* ------------------------------------------------------------------
+         * 6) SYNC LOCAL USER + ISSUE SANCTUM TOKEN
+         * ------------------------------------------------------------------ */
+        try {
+            $user = User::findForDirectoryIdentity($username, $email);
+            $isNew = $user === null;
 
-        if (! $user) {
-            $user = User::create([
-                'username' => $username,
-                'name'     => $name,
-                'email'    => $email,
-                'ou'       => $ou,
-                'password' => Hash::make(Str::random(64)),
-            ]);
-        }
+            if (! $user) {
+                $user = User::create([
+                    'username' => $username,
+                    'name'     => $name,
+                    'email'    => $email,
+                    'ou'       => $ou,
+                    'password' => Hash::make(Str::random(64)),
+                ]);
+            }
 
-        if (
-            strcasecmp((string) $user->username, $username) !== 0 &&
-            ! User::query()
-                ->whereKeyNot($user->getKey())
-                ->whereRaw('LOWER(username) = ?', [Str::lower($username)])
-                ->exists()
-        ) {
-            $user->username = $username;
-        }
+            if (
+                strcasecmp((string) $user->username, $username) !== 0 &&
+                ! User::query()
+                    ->whereKeyNot($user->getKey())
+                    ->whereRaw('LOWER(username) = ?', [Str::lower($username)])
+                    ->exists()
+            ) {
+                $user->username = $username;
+            }
 
-        $user->name = $name;
+            $user->name = $name;
 
-        if (
-            $email &&
-            ! User::query()
-                ->whereKeyNot($user->getKey())
-                ->whereRaw('LOWER(email) = ?', [Str::lower($email)])
-                ->exists()
-        ) {
-            $user->email = $email;
-        }
+            if (
+                $email &&
+                ! User::query()
+                    ->whereKeyNot($user->getKey())
+                    ->whereRaw('LOWER(email) = ?', [Str::lower($email)])
+                    ->exists()
+            ) {
+                $user->email = $email;
+            }
 
-        if ($ou) {
-            $user->ou = $ou;
-        }
+            if ($ou) {
+                $user->ou = $ou;
+            }
 
-        $user->save();
-
-        if ($isNew && empty($user->role_kode)) {
-            $user->roles()->syncWithoutDetaching(['AUDITOR']);
-            $user->role_kode = 'AUDITOR';
             $user->save();
+
+            if ($isNew && empty($user->role_kode)) {
+                $user->roles()->syncWithoutDetaching(['AUDITOR']);
+                $user->role_kode = 'AUDITOR';
+                $user->save();
+            }
+
+            \Log::info('API LDAP login success', [
+                'username' => $username,
+                'email_exists' => ! empty($email),
+            ]);
+
+            return $this->issueTokenResponse($user, $device, $key, 'ldap');
+        } catch (\Throwable $e) {
+            \Log::error('API LDAP user sync/token failed', [
+                'username' => $username,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'LDAP authentication succeeded, but the local account could not be prepared.',
+            ], 500);
         }
-
-        \Log::info('API LDAP login success', [
-            'username' => $username,
-            'email_exists' => ! empty($email),
-        ]);
-
-        return $this->issueTokenResponse($user, $device, $key, 'ldap');
     }
 
     public function me(Request $request)
@@ -402,10 +426,6 @@ class AuthController extends Controller
     {
         $username = trim($username);
 
-        if (str_contains($username, '\\')) {
-            $username = substr($username, strrpos($username, '\\') + 1);
-        }
-
         if (str_contains($username, '@')) {
             return strstr($username, '@', true) ?: $username;
         }
@@ -413,17 +433,33 @@ class AuthController extends Controller
         return $username;
     }
 
-    private function identityType(string $identity): string
-    {
-        if (str_contains($identity, '@')) {
-            return 'upn';
+    private function resolveDirectoryDomain(
+        string $username,
+        ?string $bindDn,
+        string $baseDn,
+    ): ?string {
+        foreach ([$username, $bindDn] as $identity) {
+            $identity = trim((string) $identity);
+
+            if ($identity !== '' && str_contains($identity, '@')) {
+                [, $domain] = array_pad(explode('@', $identity, 2), 2, '');
+                $domain = trim($domain);
+
+                if ($domain !== '') {
+                    return $domain;
+                }
+            }
         }
 
-        if (str_contains($identity, '\\')) {
-            return 'netbios';
-        }
+        preg_match_all('/(?:^|,)\s*DC=([^,]+)/i', $baseDn, $matches);
+        $parts = array_values(array_filter(array_map(
+            static fn ($value) => trim((string) $value),
+            $matches[1] ?? []
+        )));
 
-        return 'dn';
+        return ! empty($parts)
+            ? implode('.', $parts)
+            : null;
     }
 
     private function buildUserPayload(User $user, array $extra = []): array
@@ -449,7 +485,10 @@ class AuthController extends Controller
                     $actions = is_array($rm->actions) ? $rm->actions : [];
 
                     foreach ($actions as $action) {
-                        if ($action !== null && ! in_array($action, $permissionsMap[$menu], true)) {
+                        if (
+                            $action !== null &&
+                            ! in_array($action, $permissionsMap[$menu], true)
+                        ) {
                             $permissionsMap[$menu][] = $action;
                         }
                     }
@@ -460,6 +499,7 @@ class AuthController extends Controller
 
         foreach ($permissionsMap as $menuKode => $actions) {
             sort($actions);
+
             $permissions[] = [
                 'menu_kode' => $menuKode,
                 'actions' => array_values($actions),
